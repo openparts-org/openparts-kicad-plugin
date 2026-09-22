@@ -28,6 +28,17 @@ from KiCad's normal Symbol/Footprint picker as usual, and add it to the sheet/bo
 All of this is idempotent: installing the same part twice updates the existing entries in place
 rather than duplicating them.
 
+> **Verified end-to-end** on a real Windows machine with KiCad 10: `install.ps1` downloading and
+> installing the binary + launcher, the "OpenParts" toolbar button in the PCB editor, searching,
+> installing RP2040, the symbol/footprint libraries being correctly registered as project-specific
+> libraries, and the footprint being placed on a real board.
+>
+> One thing to know: after installing a part for the first time in a KiCad session, **restart the
+> Symbol Editor / Footprint Editor / 3D viewer windows** (close and reopen) before the new
+> `openparts` library shows up in them. KiCad reads library tables once when each of those windows
+> opens and doesn't hot-reload them if the underlying `sym-lib-table`/`fp-lib-table` changes while
+> they're already open -- this is KiCad's own behavior, not something this tool can avoid.
+
 ## Quick install
 
 Downloads a prebuilt binary and registers the [KiCad toolbar launcher](#launching-from-inside-kicad)
