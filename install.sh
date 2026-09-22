@@ -71,12 +71,19 @@ chmod +x "$INSTALL_DIR/openparts-kicad-plugin"
 
 echo "Installed binary to $INSTALL_DIR/openparts-kicad-plugin"
 
-# Locate KiCad's plugin directory: highest-version match under any of
-# the known scripting/plugins or PCM 3rdparty/plugins layouts.
+# Locate KiCad's plugin directory. 3rdparty/plugins takes priority --
+# confirmed on a real KiCad 10 install (Windows) that unpackaged Action
+# Plugins live under .../<version>/3rdparty/plugins, a different,
+# unrelated concept from the Plugin and Content Manager's own
+# "Installed" list. scripting/plugins is kept as a fallback for older
+# KiCad versions.
 find_plugin_dir() {
   local kicad_base candidate best=""
   for kicad_base in "$HOME/.local/share/kicad" "$HOME/.config/kicad"; do
     [ -d "$kicad_base" ] || continue
+    # scripting/plugins first, 3rdparty/plugins second: the loop below
+    # keeps the last match found, so 3rdparty/plugins wins when both
+    # exist for the same install.
     for candidate in "$kicad_base"/*/scripting/plugins "$kicad_base"/*/3rdparty/plugins; do
       [ -d "$(dirname "$candidate")" ] || continue
       best="$candidate"

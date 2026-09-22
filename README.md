@@ -42,14 +42,12 @@ curl -fsSL https://raw.githubusercontent.com/openparts-org/openparts-kicad-plugi
 ```powershell
 irm https://raw.githubusercontent.com/openparts-org/openparts-kicad-plugin/main/install.ps1 | iex
 ```
-> The Windows installer was written from documented KiCad conventions but hasn't been run against a
-> real Windows machine yet -- if it doesn't find your KiCad plugin directory or anything else looks
-> wrong, please open an issue.
-
 Both scripts try to auto-detect your KiCad plugin directory; if they can't, they'll tell you how to
 find it via KiCad's own Tools > External Plugins > Open Plugin Directory and re-run with an explicit
-path. Afterwards, restart KiCad (or Tools > External Plugins > Refresh Plugins) and look for the new
-"OpenParts" button in the PCB editor toolbar.
+path (`-PluginDir` on Windows, `--plugin-dir` on Linux). Afterwards, restart KiCad (or Tools >
+External Plugins > Refresh Plugins) and look for the new "OpenParts" button in the PCB editor
+toolbar -- **not** in the Plugin and Content Manager's own "Installed" list, which only tracks
+packages it installed itself and never shows an unpackaged Action Plugin like this one.
 
 macOS isn't built by CI yet -- see [Manual install / building from source](#manual-install--building-from-source).
 

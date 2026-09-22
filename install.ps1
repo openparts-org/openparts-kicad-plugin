@@ -6,10 +6,14 @@
 # Everything needed is fetched from GitHub Releases -- this script does
 # not assume it's run from inside a clone of the repo.
 #
-# NOTE: this script was written from documented KiCad path conventions
-# (see README.md) but could not be executed against a real Windows
-# machine or a real KiCad install while developing it -- please report
-# any issues you hit running it.
+# NOTE: the download/install steps have been confirmed working on a
+# real Windows machine with KiCad 10. Plugin-directory auto-detection
+# was corrected from that real feedback (KiCad 10 moved user data to
+# Documents\KiCad\<version>\3rdparty\plugins) but the corrected
+# auto-detection itself hasn't been re-confirmed yet -- if it doesn't
+# find your plugin directory, use -PluginDir with the path from KiCad's
+# own Tools > External Plugins > Open Plugin Directory and please
+# report it.
 
 param(
     [string]$PluginDir = ""
@@ -49,18 +53,31 @@ if ($testZip) {
 Expand-Archive -Path $zipPath -DestinationPath $InstallDir -Force
 Write-Host "Installed binary to $InstallDir\openparts-kicad-plugin.exe"
 
-# Locate KiCad's plugin directory: highest-version match under
-# %APPDATA%\kicad\<version>\scripting\plugins.
+# Locate KiCad's plugin directory. Confirmed on a real KiCad 10 install
+# (Windows): user data moved to Documents\KiCad\<version>\, and
+# unpackaged Action Plugins (like this one) live under
+# Documents\KiCad\<version>\3rdparty\plugins -- note this is a
+# different, unrelated concept from the Plugin and Content Manager's
+# own "Installed" list, which only tracks packages it installed itself
+# and will never show a loose script dropped into this folder.
+# %APPDATA%\kicad\<version>\scripting\plugins (older/legacy layout) is
+# kept as a fallback for older KiCad versions.
 function Find-PluginDir {
-    $kicadBase = Join-Path $env:APPDATA "kicad"
-    if (-not (Test-Path $kicadBase)) {
-        return $null
-    }
-    $versionDirs = Get-ChildItem -Path $kicadBase -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending
-    foreach ($v in $versionDirs) {
-        $candidate = Join-Path $v.FullName "scripting\plugins"
-        if (Test-Path (Split-Path $candidate -Parent)) {
-            return $candidate
+    $documents = [Environment]::GetFolderPath("MyDocuments")
+    $bases = @(
+        @{ Root = Join-Path $documents "KiCad"; SubPath = "3rdparty\plugins" },
+        @{ Root = Join-Path $env:APPDATA "kicad"; SubPath = "scripting\plugins" }
+    )
+    foreach ($base in $bases) {
+        if (-not (Test-Path $base.Root)) {
+            continue
+        }
+        $versionDirs = Get-ChildItem -Path $base.Root -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending
+        foreach ($v in $versionDirs) {
+            $candidate = Join-Path $v.FullName $base.SubPath
+            if (Test-Path (Split-Path $candidate -Parent)) {
+                return $candidate
+            }
         }
     }
     return $null
