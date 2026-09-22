@@ -1,0 +1,32 @@
+[package]
+name = "openparts-kicad-plugin"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Standalone GUI companion app: search OpenParts and install Symbol/Footprint/STEP into a KiCad project's local libraries."
+
+[[bin]]
+name = "openparts-kicad-plugin"
+path = "src/main.rs"
+
+[features]
+# Off by default: kicad-ipc-rs pulls in `nng-sys`, which builds the nng
+# C library from source via cmake. That's a real system dependency this
+# repo shouldn't force on everyone just to get project-path
+# auto-detection -- a nice-to-have, never required (kicad_detect.rs
+# falls back to manual entry when this feature is off or detection
+# fails). Enable with `cargo build --features kicad-ipc` if you have
+# cmake installed and want the auto-detect path.
+kicad-ipc = ["dep:kicad-ipc-rs"]
+
+[dependencies]
+openparts-client = { path = "../openparts/crates/openparts-client" }
+openparts-core = { path = "../openparts/crates/openparts-core" }
+
+eframe = "0.29"
+thiserror = "1"
+kicad-ipc-rs = { version = "0.5", optional = true, features = ["blocking"] }
+
+[dev-dependencies]
+tempfile = "3"
+sha2 = "0.10"

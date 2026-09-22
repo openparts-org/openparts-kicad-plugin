@@ -1,0 +1,62 @@
+# CI: formatting, static checks, and the offline unit/integration test
+# suite (library_sync.rs + install_part, all fixture-based -- no KiCad
+# install or running openparts-server needed).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out openparts-kicad-plugin
+        uses: actions/checkout@v4
+        with:
+          path: openparts-kicad-plugin
+
+      - name: Check out openparts (path dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/openparts
+          path: openparts
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: openparts-kicad-plugin
+
+      # eframe's Linux backend links against GTK3/X11/Wayland/xkbcommon
+      # headers at compile time. No display is needed to build or to run
+      # library_sync's tests -- this is purely to satisfy the linker.
+      - name: Install eframe Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-0 \
+            libx11-dev \
+            libxi-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libgl1-mesa-dev
+
+      - name: cargo fmt --check
+        working-directory: openparts-kicad-plugin
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        working-directory: openparts-kicad-plugin
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        working-directory: openparts-kicad-plugin
+        run: cargo test
