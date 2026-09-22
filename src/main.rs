@@ -6,11 +6,30 @@ use openparts_client::{ArtifactKind, Client, PartSummary};
 use std::path::{Path, PathBuf};
 
 fn main() -> eframe::Result<()> {
+    let project_dir = parse_project_dir_arg(std::env::args());
     eframe::run_native(
         "OpenParts for KiCad",
         eframe::NativeOptions::default(),
-        Box::new(|_cc| Ok(Box::new(App::default()))),
+        Box::new(|_cc| Ok(Box::new(App::new(project_dir)))),
     )
+}
+
+/// Parses an optional `--project-dir <path>` / `--project-dir=<path>`
+/// argument, used by `kicad-integration/openparts_launcher.py` to
+/// pre-fill the project directory with KiCad's own currently-open
+/// project path, so the user doesn't have to type or paste it in by
+/// hand when launched from KiCad's toolbar.
+fn parse_project_dir_arg(args: impl Iterator<Item = String>) -> Option<String> {
+    let mut args = args.skip(1);
+    while let Some(arg) = args.next() {
+        if let Some(value) = arg.strip_prefix("--project-dir=") {
+            return Some(value.to_string());
+        }
+        if arg == "--project-dir" {
+            return args.next();
+        }
+    }
+    None
 }
 
 struct App {
@@ -23,15 +42,15 @@ struct App {
     status: String,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    fn new(project_dir: Option<String>) -> Self {
         Self {
             registry_url: "http://localhost:8080".to_string(),
             query: String::new(),
             results: Vec::new(),
             selected: None,
             revision: String::new(),
-            project_dir: String::new(),
+            project_dir: project_dir.unwrap_or_default(),
             status: String::new(),
         }
     }
@@ -236,6 +255,37 @@ fn install_part(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_dir_arg_absent_yields_none() {
+        let args = ["openparts-kicad-plugin".to_string()];
+        assert_eq!(parse_project_dir_arg(args.into_iter()), None);
+    }
+
+    #[test]
+    fn project_dir_arg_space_separated() {
+        let args = [
+            "openparts-kicad-plugin".to_string(),
+            "--project-dir".to_string(),
+            "/home/user/my-project".to_string(),
+        ];
+        assert_eq!(
+            parse_project_dir_arg(args.into_iter()),
+            Some("/home/user/my-project".to_string())
+        );
+    }
+
+    #[test]
+    fn project_dir_arg_equals_separated() {
+        let args = [
+            "openparts-kicad-plugin".to_string(),
+            "--project-dir=/home/user/my-project".to_string(),
+        ];
+        assert_eq!(
+            parse_project_dir_arg(args.into_iter()),
+            Some("/home/user/my-project".to_string())
+        );
+    }
 
     /// Exercises `install_part`'s file-writing side entirely against a
     /// local filesystem fixture -- no real `openparts-server` needed,

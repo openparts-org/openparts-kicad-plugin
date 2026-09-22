@@ -51,9 +51,32 @@ cargo run --release
 ```
 
 Enter your `openparts-server` URL (defaults to `http://localhost:8080`), search, select a part,
-set the target project directory, and click Install.
+set the target project directory, and click Install. The project directory can also be pre-filled
+via `--project-dir <path>` on the command line, which is how the KiCad launcher below invokes it.
 
-## Project-path auto-detect
+## Launching from inside KiCad
+
+`kicad-integration/openparts_launcher.py` is a pcbnew Action Plugin: it adds an "OpenParts" button
+to the PCB Editor's toolbar that runs this app as an external process with `--project-dir` already
+set to the currently open project's directory. It does not use KiCad's IPC API (which has no
+library-management support to begin with) -- it's the same "Python toolbar button that shells out
+to an external tool" pattern used by plugins like InteractiveHtmlBom.
+
+Install (Linux):
+
+```sh
+mkdir -p ~/.local/share/kicad/9.0/scripting/plugins
+ln -s "$(pwd)/kicad-integration/openparts_launcher.py" \
+    ~/.local/share/kicad/9.0/scripting/plugins/openparts_launcher.py
+```
+
+Adjust `9.0` to your installed KiCad version (Help > About KiCad), then restart KiCad or use
+Tools > External Plugins > Refresh Plugins. By default the plugin looks for the built binary at
+`~/OpenParts/openparts-kicad-plugin/target/release/openparts-kicad-plugin`; override that with the
+`OPENPARTS_KICAD_PLUGIN_BIN` environment variable or by editing `DEFAULT_BINARY_PATH` in the
+script if your checkout lives somewhere else.
+
+## Project-path auto-detect (alternative to the launcher above)
 
 Optional feature `kicad-ipc`, off by default:
 
@@ -64,9 +87,10 @@ cargo build --features kicad-ipc
 When enabled, the "Detect via KiCad" button uses [`kicad-ipc-rs`](https://docs.rs/kicad-ipc-rs) to
 ask a running KiCad instance (10.0.1+, with its IPC API enabled in Preferences) for its current
 project path. This is best-effort and never required -- the project directory can always be typed
-in by hand. It's off by default because `kicad-ipc-rs` pulls in `nng-sys`, which compiles the
-`nng` C library from source via `cmake`; that's a real system dependency not everyone building
-this app needs.
+in by hand, or pre-filled via the launcher plugin above (which needs neither this feature nor
+`cmake`). It's off by default because `kicad-ipc-rs` pulls in `nng-sys`, which compiles the `nng`
+C library from source via `cmake`; that's a real system dependency not everyone building this app
+needs.
 
 ## Testing
 
