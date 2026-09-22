@@ -28,7 +28,32 @@ from KiCad's normal Symbol/Footprint picker as usual, and add it to the sheet/bo
 All of this is idempotent: installing the same part twice updates the existing entries in place
 rather than duplicating them.
 
-## Building
+## Quick install
+
+Downloads a prebuilt binary and registers the [KiCad toolbar launcher](#launching-from-inside-kicad)
+for you -- no Rust toolchain needed.
+
+**Linux:**
+```sh
+curl -fsSL https://raw.githubusercontent.com/openparts-org/openparts-kicad-plugin/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/openparts-org/openparts-kicad-plugin/main/install.ps1 | iex
+```
+> The Windows installer was written from documented KiCad conventions but hasn't been run against a
+> real Windows machine yet -- if it doesn't find your KiCad plugin directory or anything else looks
+> wrong, please open an issue.
+
+Both scripts try to auto-detect your KiCad plugin directory; if they can't, they'll tell you how to
+find it via KiCad's own Tools > External Plugins > Open Plugin Directory and re-run with an explicit
+path. Afterwards, restart KiCad (or Tools > External Plugins > Refresh Plugins) and look for the new
+"OpenParts" button in the PCB editor toolbar.
+
+macOS isn't built by CI yet -- see [Manual install / building from source](#manual-install--building-from-source).
+
+## Manual install / building from source
 
 ```sh
 cargo build --release
@@ -62,7 +87,9 @@ set to the currently open project's directory. It does not use KiCad's IPC API (
 library-management support to begin with) -- it's the same "Python toolbar button that shells out
 to an external tool" pattern used by plugins like InteractiveHtmlBom.
 
-Install (Linux):
+The [Quick install](#quick-install) scripts set this up automatically, including writing a config
+file the launcher reads to find the binary. If you're building from source instead, install it
+manually:
 
 ```sh
 mkdir -p ~/.local/share/kicad/9.0/scripting/plugins
@@ -70,11 +97,14 @@ ln -s "$(pwd)/kicad-integration/openparts_launcher.py" \
     ~/.local/share/kicad/9.0/scripting/plugins/openparts_launcher.py
 ```
 
-Adjust `9.0` to your installed KiCad version (Help > About KiCad), then restart KiCad or use
-Tools > External Plugins > Refresh Plugins. By default the plugin looks for the built binary at
-`~/OpenParts/openparts-kicad-plugin/target/release/openparts-kicad-plugin`; override that with the
-`OPENPARTS_KICAD_PLUGIN_BIN` environment variable or by editing `DEFAULT_BINARY_PATH` in the
-script if your checkout lives somewhere else.
+Adjust `9.0` to your installed KiCad version (Help > About KiCad; Tools > External Plugins > Open
+Plugin Directory is the authoritative way to find this folder on any OS/version), then restart
+KiCad or use Tools > External Plugins > Refresh Plugins. The launcher looks for the binary in this
+order: the `OPENPARTS_KICAD_PLUGIN_BIN` environment variable, then the installer's config file
+(`~/.config/openparts-kicad-plugin/binary_path.txt`, or `%APPDATA%\openparts-kicad-plugin\binary_path.txt`
+on Windows), then the `DEFAULT_BINARY_PATH` constant at the top of the script -- edit that constant
+if your manual checkout lives somewhere else and you don't want to set an environment variable or
+config file.
 
 ## Project-path auto-detect (alternative to the launcher above)
 
