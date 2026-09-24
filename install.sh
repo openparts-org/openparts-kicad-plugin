@@ -79,7 +79,12 @@ echo "Installed binary to $INSTALL_DIR/openparts-kicad-plugin"
 # KiCad versions.
 find_plugin_dir() {
   local kicad_base candidate best=""
-  for kicad_base in "$HOME/.local/share/kicad" "$HOME/.config/kicad"; do
+  # Flatpak KiCad redirects XDG_DATA_HOME/XDG_CONFIG_HOME into
+  # ~/.var/app/org.kicad.KiCad/{data,config}, so its plugin dirs live
+  # there instead of ~/.local/share/kicad or ~/.config/kicad.
+  for kicad_base in "$HOME/.local/share/kicad" "$HOME/.config/kicad" \
+    "$HOME/.var/app/org.kicad.KiCad/data/kicad" \
+    "$HOME/.var/app/org.kicad.KiCad/config/kicad"; do
     [ -d "$kicad_base" ] || continue
     # scripting/plugins first, 3rdparty/plugins second: the loop below
     # keeps the last match found, so 3rdparty/plugins wins when both
