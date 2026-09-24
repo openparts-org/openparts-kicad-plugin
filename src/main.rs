@@ -4,6 +4,17 @@ mod library_sync;
 use eframe::egui;
 use openparts_client::{ArtifactKind, Client, PartSummary};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, Sender};
+use std::time::{Duration, Instant};
+
+/// How long to wait after the last keystroke before firing an automatic
+/// (type-ahead) search -- the explicit Search button and Enter key
+/// always bypass this and fire immediately.
+const DEBOUNCE: Duration = Duration::from_millis(250);
+/// Minimum query length before an automatic search fires -- avoids a
+/// near-useless "everything matches" hit on the very first keystroke.
+/// Does not apply to an explicit Search-button/Enter dispatch.
+const MIN_QUERY_LEN: usize = 2;
 
 fn main() -> eframe::Result<()> {
     let project_dir = parse_project_dir_arg(std::env::args());
@@ -32,6 +43,8 @@ fn parse_project_dir_arg(args: impl Iterator<Item = String>) -> Option<String> {
     None
 }
 
+type SearchResult = (u64, Result<Vec<PartSummary>, String>);
+
 struct App {
     registry_url: String,
     query: String,
@@ -40,10 +53,24 @@ struct App {
     revision: String,
     project_dir: String,
     status: String,
+    search_tx: Sender<SearchResult>,
+    search_rx: Receiver<SearchResult>,
+    /// Incremented on every dispatched search; a background search's
+    /// reply is only applied if it's still the latest one dispatched --
+    /// this discards a slow, superseded request's late-arriving
+    /// response instead of flashing stale results over newer ones.
+    next_generation: u64,
+    latest_dispatched_generation: u64,
+    /// Set when `query` changes and hasn't yet triggered an automatic
+    /// dispatch; cleared once a search (automatic or explicit) fires --
+    /// this is what prevents re-dispatching every frame once the
+    /// debounce condition holds.
+    last_edit_at: Option<Instant>,
 }
 
 impl App {
     fn new(project_dir: Option<String>) -> Self {
+        let (search_tx, search_rx) = std::sync::mpsc::channel();
         Self {
             registry_url: "http://localhost:8080".to_string(),
             query: String::new(),
@@ -52,12 +79,56 @@ impl App {
             revision: String::new(),
             project_dir: project_dir.unwrap_or_default(),
             status: String::new(),
+            search_tx,
+            search_rx,
+            next_generation: 0,
+            latest_dispatched_generation: 0,
+            last_edit_at: None,
         }
     }
 }
 
+/// Pure decision logic for automatic (debounced) search dispatch, kept
+/// separate from `App::update` so it's testable without an egui
+/// context, a background thread, or a live server.
+fn should_auto_dispatch(elapsed_since_edit: Duration, query_len_chars: usize) -> bool {
+    elapsed_since_edit >= DEBOUNCE && query_len_chars >= MIN_QUERY_LEN
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Drain any background search replies, applying only the latest
+        // dispatched generation's result (see `next_generation`'s docs).
+        while let Ok((generation, result)) = self.search_rx.try_recv() {
+            if generation == self.latest_dispatched_generation {
+                match result {
+                    Ok(results) => {
+                        self.status = format!("{} result(s).", results.len());
+                        self.results = results;
+                        self.selected = None;
+                    }
+                    Err(e) => {
+                        self.status = format!("Search failed: {e}");
+                        self.results.clear();
+                    }
+                }
+            }
+        }
+
+        // Debounced automatic dispatch: fires `DEBOUNCE` after the last
+        // keystroke, provided the query is long enough. `request_repaint_after`
+        // is required here -- egui only redraws on input/explicit request by
+        // default, so without it the app would never wake up on its own to
+        // notice the debounce timer has elapsed while the user is idle.
+        if let Some(edit_at) = self.last_edit_at {
+            let elapsed = edit_at.elapsed();
+            if should_auto_dispatch(elapsed, self.query.chars().count()) {
+                self.dispatch_search(ctx);
+            } else {
+                ctx.request_repaint_after(DEBOUNCE.saturating_sub(elapsed));
+            }
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("OpenParts for KiCad");
             ui.label(
@@ -74,9 +145,14 @@ impl eframe::App for App {
 
             ui.horizontal(|ui| {
                 ui.label("Search:");
-                ui.text_edit_singleline(&mut self.query);
-                if ui.button("Search").clicked() {
-                    self.do_search();
+                let response = ui.text_edit_singleline(&mut self.query);
+                if response.changed() {
+                    self.last_edit_at = Some(Instant::now());
+                }
+                let submitted_via_enter =
+                    response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if submitted_via_enter || ui.button("Search").clicked() {
+                    self.dispatch_search(ctx);
                 }
             });
 
@@ -129,19 +205,32 @@ impl eframe::App for App {
 }
 
 impl App {
-    fn do_search(&mut self) {
-        let client = Client::new(&self.registry_url);
-        match client.search(&self.query) {
-            Ok(results) => {
-                self.status = format!("{} result(s).", results.len());
-                self.results = results;
-                self.selected = None;
-            }
-            Err(e) => {
-                self.status = format!("Search failed: {e}");
-                self.results.clear();
-            }
-        }
+    /// Fires a search in the background (never blocks the UI thread --
+    /// `Client::search` is a blocking HTTP call). Called both for
+    /// automatic (debounced) type-ahead dispatch and for an explicit
+    /// Search-button/Enter submission, which bypass the debounce delay
+    /// and `MIN_QUERY_LEN` check by calling this directly.
+    fn dispatch_search(&mut self, ctx: &egui::Context) {
+        self.next_generation += 1;
+        let generation = self.next_generation;
+        self.latest_dispatched_generation = generation;
+        self.last_edit_at = None;
+        self.status = "Searching...".to_string();
+
+        let registry_url = self.registry_url.clone();
+        let query = self.query.clone();
+        let tx = self.search_tx.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let client = Client::new(&registry_url);
+            let result = client.search(&query).map_err(|e| e.to_string());
+            let _ = tx.send((generation, result));
+            // Background results arrive outside egui's normal
+            // input-driven redraw cycle -- explicitly request a repaint
+            // so the result shows up promptly instead of waiting for
+            // the next user interaction.
+            ctx.request_repaint();
+        });
     }
 
     fn do_install(&mut self) {
@@ -255,6 +344,29 @@ fn install_part(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn does_not_auto_dispatch_before_the_debounce_elapses() {
+        assert!(!should_auto_dispatch(
+            Duration::from_millis(100),
+            "STM".len()
+        ));
+    }
+
+    #[test]
+    fn auto_dispatches_once_debounce_elapses_with_a_long_enough_query() {
+        assert!(should_auto_dispatch(Duration::from_millis(300), "ST".len()));
+    }
+
+    #[test]
+    fn does_not_auto_dispatch_a_too_short_query_even_after_debounce_elapses() {
+        assert!(!should_auto_dispatch(Duration::from_millis(300), "S".len()));
+    }
+
+    #[test]
+    fn empty_query_never_auto_dispatches() {
+        assert!(!should_auto_dispatch(Duration::from_secs(10), 0));
+    }
 
     #[test]
     fn project_dir_arg_absent_yields_none() {
